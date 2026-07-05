@@ -43,28 +43,28 @@ The system consists of a 2D game frontend, a backend WebSocket/REST server, an a
 
 ```mermaid
 graph TD
-    User([User in Web App]) <-->|WebSockets| UI[Game UI - Phaser 3<br>Port 8080]
-    UI <-->|WebSockets / REST| API[FastAPI Backend API<br>Port 8000]
+    User([User in Web App]) <-->|"WebSockets"| UI["Game UI - Phaser 3<br>Port 8080"]
+    UI <-->|"WebSockets / REST"| API["FastAPI Backend API<br>Port 8000"]
     
     subgraph Agentic System [LangGraph Agent Workflow]
-        API <-->|Execute Graph| LG[LangGraph Orchestrator]
-        LG -->|1. Check Input| Guard[Guardrail Node]
-        Guard -->|2. Search Memory| Retrieve[RAG Retriever Node]
-        Retrieve -->|Query| DB
-        Guard -->|3. Generate Response| Conv[Conversation Node]
-        Conv -->|Groq API| Groq[Groq LLM Llama-3.3]
-        Conv -->|4. Summarize History| SumNode[Summarize Node]
+        API <-->|"Execute Graph"| LG[LangGraph Orchestrator]
+        LG -->|"1. Check Input"| Guard[Guardrail Node]
+        LG -->|"2. Search Memory"| Retrieve[RAG Retriever Node]
+        Retrieve -->|"Query"| DB
+        LG -->|"3. Generate Response"| Conv[Conversation Node]
+        Conv -->|"Groq API"| Groq[Groq LLM Llama-3.3]
+        Conv -->|"4. Summarize History"| SumNode[Summarize Node]
     end
 
     subgraph Storage [Local Infrastructure]
-        DB[(MongoDB Local<br>Port 27017)]
+        DB[("MongoDB Local<br>Port 27017")]
     end
 
     subgraph LLMOps [Monitoring & Evaluation]
-        LG -->|Trace Prompts| Opik[Opik / Comet ML Cloud]
-        Eval[Evidently AI Engine] -->|Run Offline Evals| DB
-        Eval -->|Generates| HTML[HTML Reports / Workspace]
-        EvidUI[Evidently UI<br>Port 8085] -->|Read Dashboard| HTML
+        LG -->|"Trace Prompts"| Opik[Opik / Comet ML Cloud]
+        Eval[Evidently AI Engine] -->|"Run Offline Evals"| DB
+        Eval -->|"Generates"| HTML["HTML Reports / Workspace"]
+        EvidUI["Evidently UI<br>Port 8085"] -->|"Read Dashboard"| HTML
     end
 ```
 
@@ -80,12 +80,12 @@ The LangGraph agent workflow acts as a state-machine that processes each incomin
 ```mermaid
 graph TD
     Start([START]) --> Guardrail[Guardrail Node]
-    Guardrail -->|Check Violation| IsViolated{Violated?}
+    Guardrail -->|"Check Violation"| IsViolated{"Violated?"}
     IsViolated -->|Yes| Refusal[Refusal Node]
     IsViolated -->|No| Conversation[Conversation Node]
     
-    Conversation -->|Requires Context?| NeedsContext{Needs context?}
-    NeedsContext -->|Yes (Tool Call)| Retriever[Retriever Node]
+    Conversation -->|"Requires Context?"| NeedsContext{"Needs context?"}
+    NeedsContext -->|"Yes (Tool Call)"| Retriever[Retriever Node]
     Retriever -->|Query DB| DB[(MongoDB Vector Index)]
     DB -->|Documents| SummarizeCtx[Summarize Context Node]
     SummarizeCtx --> Conversation
@@ -93,7 +93,7 @@ graph TD
     NeedsContext -->|No| Connector[Connector Node]
     Refusal --> Connector
     
-    Connector -->|Check Message Length| ShouldSummarize{Messages > 30?}
+    Connector -->|Check Message Length| ShouldSummarize{"Messages > 30?"}
     ShouldSummarize -->|Yes| SummarizeConv[Summarize Conversation Node]
     ShouldSummarize -->|No| EndNode([END])
     
