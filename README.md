@@ -36,6 +36,91 @@ After completing this course, you'll have access to your own agentic simulation 
 
 -------
 
+## 🏗️ System Architecture & Workflow
+
+### System Architecture
+The system consists of a 2D game frontend, a backend WebSocket/REST server, an agent brain orchestrated with LangGraph, local/cloud storage, and monitoring tools:
+
+```mermaid
+graph TD
+    User([User in Web App]) <-->|WebSockets| UI[Game UI - Phaser 3<br>Port 8080]
+    UI <-->|WebSockets / REST| API[FastAPI Backend API<br>Port 8000]
+    
+    subgraph Agentic System [LangGraph Agent Workflow]
+        API <-->|Execute Graph| LG[LangGraph Orchestrator]
+        LG -->|1. Check Input| Guard[Guardrail Node]
+        Guard -->|2. Search Memory| Retrieve[RAG Retriever Node]
+        Retrieve -->|Query| DB
+        Guard -->|3. Generate Response| Conv[Conversation Node]
+        Conv -->|Groq API| Groq[Groq LLM Llama-3.3]
+        Conv -->|4. Summarize History| SumNode[Summarize Node]
+    end
+
+    subgraph Storage [Local Infrastructure]
+        DB[(MongoDB Local<br>Port 27017)]
+    end
+
+    subgraph LLMOps [Monitoring & Evaluation]
+        LG -->|Trace Prompts| Opik[Opik / Comet ML Cloud]
+        Eval[Evidently AI Engine] -->|Run Offline Evals| DB
+        Eval -->|Generates| HTML[HTML Reports / Workspace]
+        EvidUI[Evidently UI<br>Port 8085] -->|Read Dashboard| HTML
+    end
+```
+
+The key system components are:
+1. **Frontend (Game UI)**: A retro 2D pixel-art game interface built using the **Phaser 3** framework and Webpack. Users walk around and interact with philosophers. It is served on `http://localhost:8080`.
+2. **Backend API**: A high-performance **FastAPI** web server running on `http://localhost:8000`. It exposes REST endpoints and active WebSocket connections for real-time, low-latency chat interactions in the game.
+3. **Agent Brain**: Orchestrated using **LangGraph** for flexible, state-machine agent interactions. It uses **Groq** for high-speed LLM inference, and **MongoDB** as a document database, vector store, and agent state checkpoint tracker.
+4. **Monitoring & Evals**: Integrates with **Opik** (online logging/tracing) and **Evidently AI** (offline evaluations on a test dataset, exposing an HTML report dashboard at `http://localhost:8085`).
+
+### Agent Workflow
+The LangGraph agent workflow acts as a state-machine that processes each incoming message through several nodes:
+
+```mermaid
+graph TD
+    Start([START]) --> Guardrail[Guardrail Node]
+    Guardrail -->|Check Violation| IsViolated{Violated?}
+    IsViolated -->|Yes| Refusal[Refusal Node]
+    IsViolated -->|No| Conversation[Conversation Node]
+    
+    Conversation -->|Requires Context?| NeedsContext{Needs context?}
+    NeedsContext -->|Yes (Tool Call)| Retriever[Retriever Node]
+    Retriever -->|Query DB| DB[(MongoDB Vector Index)]
+    DB -->|Documents| SummarizeCtx[Summarize Context Node]
+    SummarizeCtx --> Conversation
+    
+    NeedsContext -->|No| Connector[Connector Node]
+    Refusal --> Connector
+    
+    Connector -->|Check Message Length| ShouldSummarize{Messages > 30?}
+    ShouldSummarize -->|Yes| SummarizeConv[Summarize Conversation Node]
+    ShouldSummarize -->|No| EndNode([END])
+    
+    SummarizeConv --> EndNode
+```
+
+1. **Guardrail Node**: Analyzes the user query using a classification model to see if it violates era-appropriate constraints (e.g. Socrates speaking of modern politics or technologies post-399 BC). If violated, the graph routes to an in-character Refusal Node and skips the conversation node.
+2. **Conversation Node**: The central brain. It takes the query, conversation history, and any retrieved contextual memory to craft an in-character response using the Groq API.
+3. **Retriever Node**: Executes if the conversation node requests details from the database. It queries the MongoDB vector store for the philosopher's custom context.
+4. **Summarize Context Node**: Dynamically summarizes the retrieved document fragments to save context window tokens and filter out irrelevant data.
+5. **Connector Node**: Standardizes intermediate state parameters.
+6. **Summarize Conversation Node**: Triggered conditionally when the message thread length exceeds 30 messages. It summarizes previous logs, writes them to the `summary` state parameter, and deletes old messages to keep token usage small.
+
+---
+
+## 🛠️ Technologies Used
+- **Core Orchestration**: `langgraph`, `langchain-core` for the state-machine workflow agent architecture.
+- **LLM Providers**: `langchain-groq` (Llama 3.3 70B & Llama 3.1 8B) for primary inference; `openai` (gpt-4o-mini) as a judge for evaluations.
+- **API and Networking**: `fastapi[standard]` for the REST API and WebSocket communication.
+- **Database / Vector Search**: `pymongo`, `langchain-mongodb`, `langgraph-checkpoint-mongodb` utilizing MongoDB Atlas Local as a vector store, document database, and checkpointer.
+- **Embedding Model**: `sentence-transformers/all-MiniLM-L6-v2` via HuggingFace for encoding knowledge bases into 384-dimensional dense vectors.
+- **Observability**: `opik` for real-time prompt telemetry and tracing.
+- **Evaluation**: `evidently` for text quality, sentiment analysis, correctness, faithfulness, and context quality.
+- **Development Tooling**: `uv` for python environments, Docker & Docker Compose, Webpack, npm, and GNU Make.
+
+-------
+
 <table style="border-collapse: collapse; border: none;">
   <tr style="border: none;">
     <td width="20%" style="border: none;">
@@ -256,11 +341,121 @@ To impersonate our philosopher agents with real-world knowledge, we will populat
 
 You don't have to download anything explicitly. While populating the long-term memory, the `philoagents-api` application will download the data from the internet automatically.
 
+## 🎭 Philosopher Characters & Conversational Tones
+The system supports ten standard historical figures and three newly integrated Indian philosophical characters. Every character has a specific personality profile, style, era configuration, and knowledge base:
+
+| Philosopher | Style | Persona & Era Rules |
+|-------------|-------|---------------------|
+| **Socrates** | Friendly, humble, curious | Probes ethical foundations with relentless curiosity. Era: Classical Greece (c. 470 – 399 BC). |
+| **Plato** | Mystical, poetic | Uses visionary metaphors (e.g., the Allegory of the Cave). Era: Classical Greece (c. 428 – 348 BC). |
+| **Aristotle** | Logical, analytical | Organizes thoughts systematically. Era: Classical Greece (c. 384 – 322 BC). |
+| **Descartes** | Skeptical, bilingual (French) | Questions existence and consciousness. Era: Early Modern Europe (1596 – 1650 AD). |
+| **Leibniz** | Serious, dry | Connects math with cosmic calculus. Era: Early Modern Europe (1646 – 1716 AD). |
+| **Ada Lovelace** | Technical, artistic, poetic | Integrates computation with creative imagination. Era: Victorian Era Britain (1815 – 1852 AD). |
+| **Alan Turing** | Friendly, technical | Loves puzzles and thought experiments (e.g., Turing Test). Era: Mid-20th Century (1912 – 1954 AD). |
+| **Noam Chomsky** | Serious, deep | Linguistically deconstructs AI hype. Era: Modern Era (1928 – Present). |
+| **John Searle** | Academic, dry humor | Argues semantics vs. syntax (e.g., Chinese Room). Era: Modern Era (1932 – Present). |
+| **Daniel Dennett** | Sarcastic, ironic | Explains consciousness with down-to-earth metaphors. Era: Modern Era (1942 – 2024 AD). |
+| **Krishna** (Custom) | Poetic, compassionate, peaceful | Explores Karma, Dharma, and the Atman (Self) using wisdom from the Bhagavad Gita. Era: Ancient India (Timeless / c. 3100 BC). |
+| **Buddha** (Custom) | Tranquil, gentle, mindful | Discusses impermanence (Anicca), non-self (Anatta), and mindfulness. Era: Ancient India (c. 563 – 483 BC). |
+| **Chanakya** (Custom) | Sharp, direct, authoritative | Focuses on pragmatism, containment, security, and governance (Arthashastra). Era: Ancient Mauryan Empire (c. 375 – 283 BC). |
+
+---
+
+## 📊 LLM Observability & Evaluation (Evidently AI)
+To ensure our agents converse accurately and stay in character, the project includes an offline evaluation suite using **Evidently AI**:
+- **Dataset**: Built from predefined golden query-response test cases at [evaluation_dataset.json](philoagents-api/data/evaluation_dataset.json).
+- **Core Metrics & Descriptors**:
+  - **TextLength**: Measures character length of generated response.
+  - **Sentiment**: Computes sentiment polarity (positive, neutral, negative) to check if the tone is aligned.
+  - **Semantic Similarity**: Computes similarity between generated response and expected response using sentence embeddings.
+  - **LLM-as-a-Judge Metrics** (utilizing `gpt-4o-mini` via OpenAI API):
+    - **Correctness**: Checks if the generated answer matches the expected answer factually.
+    - **Faithfulness**: Checks if the generated response is fully supported by the retrieved context (detecting hallucinations).
+    - **Context Quality**: Measures how relevant the retrieved context from MongoDB was to the user query.
+    - **Toxicity**: Evaluates if the response contains any toxic language.
+- **Evidently UI**: The results are saved as standalone HTML/JSON files (`data/evidently_report.html`) and logged to a local workspace (`workspace/`) which can be visualized in real-time by running the Evidently UI server (`http://localhost:8085`).
+
+---
+
+## 🌐 Local Host Port Directory
+Here is a directory of the ports and endpoints used during local development:
+
+| Service | Local URL / Port | Description |
+|---------|------------------|-------------|
+| **Game UI** | `http://localhost:8080` | Web interface to play the simulation |
+| **Agent API** | `http://localhost:8000` | FastAPI server handling agent requests |
+| **API Docs** | `http://localhost:8000/docs` | Swagger interactive docs for the backend API |
+| **Evidently UI** | `http://localhost:8085` | Dashboard to view offline evaluation metrics |
+| **MongoDB Database** | `localhost:27017` | Local MongoDB Atlas database container |
+| **Opik Dashboard** | Cloud Service | `https://www.comet.com/opik/` for prompt logging & tracing |
+
+---
+
 ## 🚀 Getting Started
 
 Find detailed setup and usage instructions in the [INSTALL_AND_USAGE.md](INSTALL_AND_USAGE.md) file.
 
 **Pro tip:** Read the accompanying articles first for a better understanding of the system you'll build.
+
+## 🔧 Troubleshooting & Common Setup Issues
+
+We have identified common configuration issues and provided detailed solutions below.
+
+### 1. Error: `.env` file not found
+* **Symptoms**:
+  `env file C:\Users\apras\Desktop\Philoagents\philoagents-api\.env not found: The system cannot find the file specified.` when running `docker compose up`.
+* **Cause**: Docker Compose looks for `philoagents-api/.env` as defined in `docker-compose.yml` (`env_file: - ./philoagents-api/.env`), but it has not been created yet.
+* **Solution**: Create the file from `.env.example`:
+  ```powershell
+  # Windows Powershell / CMD
+  copy philoagents-api\.env.example philoagents-api\.env
+  ```
+  And populate the required API keys (e.g., `GROQ_API_KEY`, and optionally `OPENAI_API_KEY` or `COMET_API_KEY` for evaluation).
+
+### 2. Issue: Heavy Docker Image Build Overhead (Torch / CUDA wheel download)
+* **Symptoms**: When building the `api` container image, the build hangs or takes a very long time during `uv sync --frozen --no-cache` downloading large wheels (`torch`, `nvidia-*` packages totaling ~2GB).
+* **Cause**: Docker builds run on a Linux-based virtual machine where `uv sync` installs the dependencies specified in `pyproject.toml`. By default, Python wheel installations for libraries like PyTorch fall back to CUDA wheels on Linux.
+* **Solution**: Run the database in Docker, but run the API and UI services locally! This is the recommended lightweight developer workflow:
+  1. **Start the database only**:
+     ```bash
+     docker compose up local_dev_atlas -d
+     ```
+  2. **Install and run the Backend locally**:
+     ```bash
+     cd philoagents-api
+     uv venv
+     .venv\Scripts\activate
+     uv pip install -e .
+     # Create the database vector memory
+     uv run python -m tools.create_long_term_memory
+     # Start backend server
+     uv run fastapi run src/philoagents/infrastructure/api.py --port 8000
+     ```
+  3. **Install and run the Frontend UI locally**:
+     ```bash
+     cd philoagents-ui
+     npm install
+     npm run dev
+     ```
+
+### 3. Error: `make` Command Not Found on Windows
+* **Symptoms**: Running commands like `make infrastructure-up` fails with `'make' is not recognized as an internal or external command`.
+* **Cause**: GNU Make is not natively included in Windows.
+* **Solution**:
+  - Download and install **GnuWin32 Make** (typically installs to `C:\Program Files (x86)\GnuWin32\bin`).
+  - Add GnuWin32's `bin` folder to your session path in PowerShell:
+    ```powershell
+    $env:PATH += ";C:\Program Files (x86)\GnuWin32\bin"
+    ```
+  - Alternatively, bypass `make` and run the commands directly in your terminal. For example, run `docker compose up local_dev_atlas -d` instead of `make infrastructure-up`.
+
+### 4. WSL Requirement for Windows Users
+* **Symptoms**: UNIX commands like `cp` or `source ./.venv/bin/activate` fail inside standard cmd.exe.
+* **Cause**: Windows cmd/PowerShell uses different command conventions and paths.
+* **Solution**: Use Windows Subsystem for Linux (WSL) for a native Linux environment, or run the equivalent Windows commands (e.g. `copy` instead of `cp`, and `.\.venv\Scripts\activate` instead of `source`).
+
+---
 
 ## 💡 Questions and Troubleshooting
 
