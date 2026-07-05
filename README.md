@@ -107,6 +107,62 @@ graph TD
 5. **Connector Node**: Standardizes intermediate state parameters.
 6. **Summarize Conversation Node**: Triggered conditionally when the message thread length exceeds 30 messages. It summarizes previous logs, writes them to the `summary` state parameter, and deletes old messages to keep token usage small.
 
+### Detailed Execution Workflow (Sequence Diagram)
+Here is the sequence of runtime operations when a user sends a message to a philosopher in town:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User (Browser)
+    participant UI as Phaser 3 Game UI
+    participant API as FastAPI Backend
+    participant LG as LangGraph Agent Workflow
+    participant LLM as Groq LLM API
+    participant DB as MongoDB (Vector & State DB)
+    participant Opik as Opik Tracing
+
+    User->>UI: Walk to Philosopher & Submit Chat Message
+    UI->>API: Send Message via WebSocket connection
+    API->>LG: Invoke Workflow with current state (messages, thread_id)
+    Note over LG: START Workflow Graph
+    LG->>Opik: Start trace logging
+    
+    %% Guardrail step
+    LG->>LLM: Call Guardrail Chain (Check era-appropriate constraints)
+    LLM-->>LG: Return classification (violates / does not violate)
+    
+    alt Guardrail Violated
+        LG->>LLM: Call Refusal Chain (Generate in-character rejection)
+        LLM-->>LG: Return refusal message (e.g. Socrates refusing modern tech query)
+        Note over LG: Skip conversation & retrieval, go to Connector
+    else Guardrail Passed
+        %% Conversation & RAG step
+        LG->>LLM: Invoke Conversation Model with chat history & context
+        Note over LLM: LLM decides to search database (Tool Call)
+        LLM-->>LG: Request retriever tool call
+        LG->>DB: Query philosopher_long_term_memory (Vector Search)
+        DB-->>LG: Return document chunks
+        LG->>LLM: Call Context Summarizer (Extract relevant facts)
+        LLM-->>LG: Return summarized facts
+        LG->>LLM: Re-call Conversation Model with facts & context
+        LLM-->>LG: Return final response text
+    end
+    
+    %% Conversation Summarization check
+    opt Messages count > 30
+        LG->>LLM: Call Conversation Summary Chain (Condense history)
+        LLM-->>LG: Return summarized conversation string
+        LG->>DB: Save updated summary and remove older messages from checkpoints
+    end
+    
+    Note over LG: END Workflow Graph
+    LG->>DB: Save state checkpoint (thread_id)
+    LG->>Opik: Close trace logging
+    LG-->>API: Return final AI Message
+    API-->>UI: Send response back via WebSocket
+    UI-->>User: Render character dialogue bubble in 2D game
+```
+
 ---
 
 ## 🛠️ Technologies Used
