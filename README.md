@@ -47,13 +47,18 @@ graph TD
     UI <-->|"WebSockets / REST"| API["FastAPI Backend API<br>Port 8000"]
     
     subgraph Agentic System [LangGraph Agent Workflow]
-        API <-->|"Execute Graph"| LG[LangGraph Orchestrator]
-        LG -->|"1. Check Input"| Guard[Guardrail Node]
-        LG -->|"2. Search Memory"| Retrieve[RAG Retriever Node]
-        Retrieve -->|"Query"| DB
-        LG -->|"3. Generate Response"| Conv[Conversation Node]
-        Conv -->|"Groq API"| Groq[Groq LLM Llama-3.3]
-        Conv -->|"4. Summarize History"| SumNode[Summarize Node]
+        LG[LangGraph Orchestrator]
+        Guard[Guardrail Node]
+        Retrieve[RAG Retriever Node]
+        Conv[Conversation Node]
+        Groq[Groq LLM Llama-3.3]
+        SumNode[Summarize Node]
+        
+        LG -->|"1. Check Input"| Guard
+        LG -->|"2. Search Memory"| Retrieve
+        LG -->|"3. Generate Response"| Conv
+        Conv -->|"Groq API"| Groq
+        Conv -->|"4. Summarize History"| SumNode
     end
 
     subgraph Storage [Local Infrastructure]
@@ -61,11 +66,19 @@ graph TD
     end
 
     subgraph LLMOps [Monitoring & Evaluation]
-        LG -->|"Trace Prompts"| Opik[Opik / Comet ML Cloud]
-        Eval[Evidently AI Engine] -->|"Run Offline Evals"| DB
-        Eval -->|"Generates"| HTML["HTML Reports / Workspace"]
-        EvidUI["Evidently UI<br>Port 8085"] -->|"Read Dashboard"| HTML
+        Opik[Opik / Comet ML Cloud]
+        Eval[Evidently AI Engine]
+        HTML["HTML Reports / Workspace"]
+        EvidUI["Evidently UI<br>Port 8085"]
+        
+        Eval -->|"Generates"| HTML
+        EvidUI -->|"Read Dashboard"| HTML
     end
+
+    API <-->|"Execute Graph"| LG
+    Retrieve -->|"Query"| DB
+    LG -->|"Trace Prompts"| Opik
+    Eval -->|"Run Offline Evals"| DB
 ```
 
 The key system components are:
@@ -79,23 +92,37 @@ The LangGraph agent workflow acts as a state-machine that processes each incomin
 
 ```mermaid
 graph TD
-    Start([START]) --> Guardrail[Guardrail Node]
-    Guardrail -->|"Check Violation"| IsViolated{"Violated?"}
-    IsViolated -->|Yes| Refusal[Refusal Node]
-    IsViolated -->|No| Conversation[Conversation Node]
+    Start([START])
+    Guardrail[Guardrail Node]
+    IsViolated{"Violated?"}
+    Refusal[Refusal Node]
+    Conversation[Conversation Node]
+    NeedsContext{"Needs context?"}
+    Retriever[Retriever Node]
+    DB[(MongoDB Vector Index)]
+    SummarizeCtx[Summarize Context Node]
+    Connector[Connector Node]
+    ShouldSummarize{"Messages > 30?"}
+    SummarizeConv[Summarize Conversation Node]
+    EndNode([END])
     
-    Conversation -->|"Requires Context?"| NeedsContext{"Needs context?"}
-    NeedsContext -->|"Yes (Tool Call)"| Retriever[Retriever Node]
-    Retriever -->|Query DB| DB[(MongoDB Vector Index)]
-    DB -->|Documents| SummarizeCtx[Summarize Context Node]
+    Start --> Guardrail
+    Guardrail -->|"Check Violation"| IsViolated
+    IsViolated -->|Yes| Refusal
+    IsViolated -->|No| Conversation
+    
+    Conversation -->|"Requires Context?"| NeedsContext
+    NeedsContext -->|"Yes (Tool Call)"| Retriever
+    Retriever -->|Query DB| DB
+    DB -->|Documents| SummarizeCtx
     SummarizeCtx --> Conversation
     
-    NeedsContext -->|No| Connector[Connector Node]
+    NeedsContext -->|No| Connector
     Refusal --> Connector
     
-    Connector -->|Check Message Length| ShouldSummarize{"Messages > 30?"}
-    ShouldSummarize -->|Yes| SummarizeConv[Summarize Conversation Node]
-    ShouldSummarize -->|No| EndNode([END])
+    Connector -->|Check Message Length| ShouldSummarize
+    ShouldSummarize -->|Yes| SummarizeConv
+    ShouldSummarize -->|No| EndNode
     
     SummarizeConv --> EndNode
 ```
