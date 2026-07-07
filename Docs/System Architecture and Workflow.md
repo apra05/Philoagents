@@ -3,7 +3,7 @@
 ### System Architecture
 The system consists of a 2D game frontend, a backend WebSocket/REST server, an agent brain orchestrated with LangGraph, local/cloud storage, and monitoring tools:
 
-```mermaid
+mermaid
 graph TD
     User([User in Web App]) <-->|"WebSockets"| UI["Game UI - Phaser 3<br>Port 8080"]
     UI <-->|"WebSockets / REST"| API["FastAPI Backend API<br>Port 8000"]
@@ -28,7 +28,140 @@ graph TD
         Eval -->|"Generates"| HTML["HTML Reports / Workspace"]
         EvidUI["Evidently UI<br>Port 8085"] -->|"Read Dashboard"| HTML
     end
-```
+
+
+MAKE IT COMPLETE BY CONNECTING THE LLM TO THE ENDING MONGO DB ETC
+
+Your current architecture is missing a few important connections that would exist in a real LangGraph + RAG system:
+
+The LLM should not terminate after generating a response—it should send the response back through LangGraph to the API and finally to the game UI.
+
+MongoDB should be used not only by the Retriever but also by the Conversation/Summarizer to store chat history, summaries, and memory.
+
+The Summarize Node should write summaries back to MongoDB.
+
+The Conversation Node should retrieve context from RAG and send prompts to Groq.
+
+Opik should trace every LLM invocation.
+
+Evidently should read conversation logs from MongoDB for evaluation.
+
+A more complete architecture is:
+
+graph TD
+    %% =========================
+    %% Frontend
+    %% =========================
+    User([User in Web App]) <-->|WebSockets| UI["Game UI - Phaser 3<br/>Port 8080"]
+
+    UI <-->|REST / WebSockets| API["FastAPI Backend API<br/>Port 8000"]
+
+    %% =========================
+    %% Agent Workflow
+    %% =========================
+    subgraph Agentic_System["LangGraph Agent Workflow"]
+
+        API --> LG["LangGraph Orchestrator"]
+
+        LG --> Guard["Guardrail Node"]
+
+        Guard --> Retrieve["RAG Retriever"]
+
+        Retrieve -->|"Semantic Search"| Mongo
+
+        Retrieve --> Conv["Conversation Node"]
+
+        Conv -->|"Prompt + Context"| Groq["Groq API<br/>Llama-3.3"]
+
+        Groq -->|"LLM Response"| Conv
+
+        Conv --> Sum["Summarize Node"]
+
+        Sum -->|"Conversation Summary"| Mongo
+
+        Conv -->|"Store Chat History"| Mongo
+
+        Conv -->|"Final Response"| LG
+
+        LG --> API
+
+    end
+
+    %% =========================
+    %% Storage
+    %% =========================
+    subgraph Storage["Local Infrastructure"]
+
+        Mongo[("MongoDB<br/>Port 27017")]
+
+    end
+
+    %% =========================
+    %% Monitoring
+    %% =========================
+    subgraph LLMOps["Monitoring & Evaluation"]
+
+        Conv -->|"Prompt & Response Trace"| Opik["Opik / Comet ML"]
+
+        Groq -->|"LLM Metrics"| Opik
+
+        Mongo -->|"Conversation Logs"| Eval["Evidently AI Engine"]
+
+        Eval --> HTML["HTML Evaluation Reports"]
+
+        HTML --> EvidUI["Evidently Dashboard<br/>Port 8085"]
+
+    end
+
+    %% =========================
+    %% Response Flow
+    %% =========================
+    API -->|"JSON / WebSocket"| UI
+
+    UI -->|"Display NPC Response"| User
+Data Flow
+User sends a message from the Phaser 3 game.
+
+FastAPI receives it via WebSocket.
+
+LangGraph starts execution.
+
+Guardrail validates the request.
+
+Retriever searches MongoDB for relevant memories/documents.
+
+Retrieved context is passed to the Conversation Node.
+
+Conversation Node constructs the prompt.
+
+Prompt is sent to Groq Llama-3.3.
+
+Groq returns the generated response.
+
+Conversation Node stores the complete conversation in MongoDB.
+
+Summarizer generates long-term memory and stores it in MongoDB.
+
+LangGraph returns the response to FastAPI.
+
+FastAPI sends it to the game client.
+
+The NPC dialogue is displayed.
+
+Opik logs every prompt, response, latency, and token usage.
+
+Evidently reads stored conversations from MongoDB to generate evaluation reports and dashboards.
+
+This version represents a complete production-style architecture where MongoDB serves as both the RAG knowledge store and conversational memory, Groq is integrated into the generation loop, and Opik/Evidently are connected to the actual LLM execution and stored data.
+
+Meet Codex.
+A coding agent that helps you build and ship with AI, included for free in your ChatGPT plan.
+
+Download the app
+
+Learn more
+
+
 
 The key system components are:
 1. **Frontend (Game UI)**: A retro 2D pixel-art game interface built using the **Phaser 3** framework and Webpack. Users walk around and interact with philosophers. It is served on `http://localhost:8080`.
