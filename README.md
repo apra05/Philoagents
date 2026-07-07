@@ -56,8 +56,8 @@ graph TD
         
         LG -->|"1. Check Input"| Guard
         LG -->|"2. Search Memory"| Retrieve
-        LG -->|"3. Generate Response"| Conv
-        Conv -->|"Groq API"| Groq
+        LG <-->|"3. Generate Response"| Conv
+        Conv <-->|"Groq API"| Groq
         Conv -->|"4. Summarize History"| SumNode
     end
 
