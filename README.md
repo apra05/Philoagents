@@ -46,7 +46,7 @@ graph TD
     User([User in Web App]) <-->|"WebSockets"| UI["Game UI - Phaser 3<br>Port 8080"]
     UI <-->|"WebSockets / REST"| API["FastAPI Backend API<br>Port 8000"]
     
-    subgraph Agentic System [LangGraph Agent Workflow]
+    subgraph AgenticSystem [LangGraph Agent Workflow]
         LG[LangGraph Orchestrator]
         Guard[Guardrail Node]
         Retrieve[RAG Retriever Node]
@@ -79,6 +79,8 @@ graph TD
     Retrieve -->|"Query"| DB
     LG -->|"Trace Prompts"| Opik
     Eval -->|"Run Offline Evals"| DB
+    LG -->|"Save Checkpoint State"| DB
+    Groq -->|"Log Generation"| DB
 ```
 
 The key system components are:
